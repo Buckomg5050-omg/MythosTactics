@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 07023a7e54dbb97418bb733a96589a9b, type: 3}
+  m_Name: Archer_Class
+  m_EditorClassIdentifier: 
+  className: Archer
+  classSprite: {fileID: 21300000, guid: e677bdf26f4ff874a93bf6170e9c02da, type: 3}
+  healthStatModifier: -2
+  attackStatModifier: 6
+  defenseStatModifier: 1
+  movementStatModifier: 0
+  mpModifier: 5
+  availableSkills:
+  - {fileID: 11400000, guid: eddf7cca1befa0d458039eb52429a02b, type: 2}
+  - {fileID: 11400000, guid: 212bd19bb52a46e4b86ad980c3ed28c4, type: 2}
