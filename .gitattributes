@@ -1,0 +1,7 @@
+# Auto‐normalize text files to the native EOL on checkout,
+# and to LF on commit
+* text=auto
+
+# Force C# and shader files to always use LF in the repo:
+*.cs     text eol=lf
+*.shader text eol=lf
