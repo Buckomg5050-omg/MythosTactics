@@ -25,6 +25,14 @@ public class UIManager : MonoBehaviour
     [Tooltip("The GameObject containing the End Turn button.")]
     public GameObject endTurnButton;
 
+    // ### ADDED / MODIFIED ###
+    [Tooltip("The GameObject containing the Move button.")]
+    public GameObject moveButton; // Added field
+
+    [Tooltip("The GameObject containing the Attack button.")]
+    public GameObject attackButton; // Added field
+    // #######################
+
     [Tooltip("The GameObject containing the main action Skill button.")]
     public GameObject skillButton;
 
@@ -57,8 +65,12 @@ public class UIManager : MonoBehaviour
 
     // --- Private Fields ---
     private List<GameObject> activeAttackIndicators = new List<GameObject>();
-    private List<GameObject> activeSkillIndicators  = new List<GameObject>();
-    private GameManager gameManagerInstance;
+    private List<GameObject> activeSkillIndicators = new List<GameObject>();
+    private GameManager gameManagerInstance; // Keep this if used elsewhere, like cancel button
+
+    // Reference to the movement visualizer IF UIManager handles clearing it
+    // public MovementRangeVisualizer movementRangeVisualizer; // Optional: Assign if needed by ClearIndicators
+
 
     private void Awake()
     {
@@ -69,10 +81,13 @@ public class UIManager : MonoBehaviour
             Destroy(gameObject);
             return;
         }
+        // Optional: Find the MovementRangeVisualizer if needed
+        // movementRangeVisualizer = FindObjectOfType<MovementRangeVisualizer>();
     }
 
     void Start()
     {
+        // Fine to find GameManager here if needed for cancel button etc.
         gameManagerInstance = FindFirstObjectByType<GameManager>();
         if (gameManagerInstance == null)
             Debug.LogError("UIManager: Could not find GameManager instance in the scene!", this);
@@ -84,7 +99,8 @@ public class UIManager : MonoBehaviour
     {
         HideSelectedUnitInfo();
         HideEndTurnButton();
-        HideSkillButton();
+        // HideSkillButton(); // ### MODIFIED: Use ShowActionButtons instead ###
+        ShowActionButtons(false); // Start with all action buttons hidden
         HideSkillSelection();
         ClearAttackTargetVisuals();
         ClearSkillVisuals();
@@ -96,7 +112,10 @@ public class UIManager : MonoBehaviour
             cancelSkillButton.onClick.AddListener(() =>
             {
                 HideSkillSelection();
-                gameManagerInstance?.CancelSkillSelection();
+                // Use the static instance directly if GameManager is also a singleton
+                GameManager.Instance?.CancelSkillSelection();
+                // Or keep using gameManagerInstance if preferred
+                // gameManagerInstance?.CancelSkillSelection();
             });
         }
     }
@@ -109,36 +128,24 @@ public class UIManager : MonoBehaviour
     }
 
     // --- Selected Unit Info ---
-    public void ShowSelectedUnitInfo(UnitController unit)
+    public void ShowSelectedUnitInfo(UnitController unit) // Consider removing this if UpdateSelectedUnitInfo covers all cases
     {
-        if (selectedInfoText == null) return;
-
-        if (unit == null)
-        {
-            selectedInfoText.text = "";
-            selectedInfoText.gameObject.SetActive(false);
-        }
-        else
-        {
-            string info = $"{unit.unitName}\n" +
-                          $"HP: {unit.currentHealth} / {unit.maxHealth}\n" +
-                          $"MP: {unit.currentMp} / {unit.maxMp}";
-            selectedInfoText.text = info;
-            selectedInfoText.gameObject.SetActive(true);
-        }
-
-        // Update status effect icons for the shown unit (or clear if null)
-        UpdateStatusIcons(unit);
+        UpdateSelectedUnitInfo(unit); // Just call the main update method
     }
 
     public void UpdateSelectedUnitInfo(UnitController unit)
     {
         Debug.Log($"UIManager: Attempting to update info for {(unit == null ? "NULL" : unit.unitName)}");
-        if (selectedInfoText == null) return;
+        if (selectedInfoText == null)
+        {
+             Debug.LogError("UIManager: selectedInfoText field is not assigned!");
+             return;
+        }
 
         if (unit == null)
         {
             selectedInfoText.text = "";
+            selectedInfoText.gameObject.SetActive(false); // Also hide the object if empty
         }
         else
         {
@@ -146,13 +153,14 @@ public class UIManager : MonoBehaviour
                           $"HP: {unit.currentHealth} / {unit.maxHealth}\n" +
                           $"MP: {unit.currentMp} / {unit.maxMp}";
             selectedInfoText.text = info;
+            selectedInfoText.gameObject.SetActive(true); // Ensure object is active when showing info
         }
 
         // Update status effect icons whenever the unit info is refreshed
         UpdateStatusIcons(unit);
     }
 
-    public void HideSelectedUnitInfo()
+    public void HideSelectedUnitInfo() // Keep for explicit hiding if needed
     {
         if (selectedInfoText == null) return;
         selectedInfoText.text = "";
@@ -160,11 +168,48 @@ public class UIManager : MonoBehaviour
         UpdateStatusIcons(null);
     }
 
-    // --- End Turn & Skill Buttons ---
+    // --- End Turn Button ---
     public void ShowEndTurnButton() => endTurnButton?.SetActive(true);
     public void HideEndTurnButton() => endTurnButton?.SetActive(false);
-    public void ShowSkillButton()   => skillButton?.SetActive(true);
-    public void HideSkillButton()   => skillButton?.SetActive(false);
+
+    // --- Action Button Control (New Method) ---
+    // ### NEW METHOD ###
+    public void ShowActionButtons(bool visible)
+    {
+        // Set visibility for all action buttons using SetActive
+        if (moveButton != null) moveButton.SetActive(visible);
+        if (attackButton != null) attackButton.SetActive(visible);
+        if (skillButton != null) skillButton.SetActive(visible);
+
+        Debug.Log($"UIManager: Setting action buttons visibility to {visible}");
+    }
+    // #################
+
+
+    // --- REMOVED OBSOLETE METHODS ---
+    // public void ShowSkillButton()   => skillButton?.SetActive(true); // Now handled by ShowActionButtons
+    // public void HideSkillButton()   => skillButton?.SetActive(false); // Now handled by ShowActionButtons
+    // ###############################
+
+
+    // --- Indicator Clearing (New Method) ---
+    // ### NEW METHOD ###
+     public void ClearIndicators()
+     {
+         // Clear movement range visualizer *if* UIManager controls it
+         // if (movementRangeVisualizer != null)
+         // {
+         //      movementRangeVisualizer.ClearRange();
+         // }
+         // Otherwise, GameManager should handle clearing movement range.
+
+         // Clear attack/skill target visuals managed by UIManager
+         ClearAttackTargetVisuals();
+         ClearSkillVisuals();
+         Debug.Log("UIManager: Cleared target indicators.");
+     }
+    // ####################
+
 
     // --- Attack Visualization ---
     public void VisualizeAttackTargets(List<UnitController> targets, GridManager gridManager)
@@ -175,6 +220,7 @@ public class UIManager : MonoBehaviour
         {
             if (t == null || !t.IsAlive) continue;
             Vector3 pos = gridManager.GridToWorld(t.gridPosition);
+            // Instantiate under this UIManager transform for organization
             var go = Instantiate(attackIndicatorPrefab, pos, Quaternion.identity, transform);
             activeAttackIndicators.Add(go);
         }
@@ -195,6 +241,7 @@ public class UIManager : MonoBehaviour
         {
             if (t == null || !t.IsAlive) continue;
             Vector3 pos = gridManager.GridToWorld(t.gridPosition);
+             // Instantiate under this UIManager transform for organization
             var go = Instantiate(skillTargetIndicatorPrefab, pos, Quaternion.identity, transform);
             activeSkillIndicators.Add(go);
         }
@@ -217,25 +264,22 @@ public class UIManager : MonoBehaviour
             return;
         }
 
-        // Filter affordable skills
         var affordableSkills = new List<SkillSO>();
         foreach (var skill in skills)
         {
             if (user.currentMp >= skill.mpCost)
                 affordableSkills.Add(skill);
         }
+        Debug.Log($"UIManager.ShowSkillSelection: Found {affordableSkills.Count} affordable skills. Container: {skillButtonContainer?.name ?? "NULL"}. Panel: {skillSelectPanel?.name ?? "NULL"}");
 
-        // Clear existing buttons
         foreach (Transform child in skillButtonContainer)
             Destroy(child.gameObject);
 
-        // Instantiate buttons
         foreach (var skill in affordableSkills)
         {
             var buttonInstance = Instantiate(skillButtonTemplatePrefab, skillButtonContainer);
-            buttonInstance.transform.SetParent(skillButtonContainer, false);
+            buttonInstance.transform.SetParent(skillButtonContainer, false); // Ensure scale is preserved
 
-            // Set button text with optional MP cost
             var buttonTextComp = buttonInstance.GetComponentInChildren<TextMeshProUGUI>();
             if (buttonTextComp != null)
             {
@@ -245,7 +289,6 @@ public class UIManager : MonoBehaviour
                 buttonTextComp.text = btnText;
             }
 
-            // Hook up click callback
             var buttonComp = buttonInstance.GetComponent<Button>();
             if (buttonComp != null)
             {
@@ -253,16 +296,16 @@ public class UIManager : MonoBehaviour
                 buttonComp.onClick.RemoveAllListeners();
                 buttonComp.onClick.AddListener(() =>
                 {
-                    HideSkillSelection();
+                    // HideSkillSelection(); // Hiding happens in the callback now if needed
                     onSkillSelectedCallback(captured);
                 });
             }
-
             buttonInstance.SetActive(true);
         }
+        Debug.Log("UIManager.ShowSkillSelection: Button loop finished. Activating panel...");
 
         skillSelectPanel.SetActive(true);
-        Debug.Log("UIManager.ShowSkillSelection: Method finished.");
+        Debug.Log($"UIManager.ShowSkillSelection: Panel '{skillSelectPanel?.name ?? "NULL"}' SetActive(true) called. Panel active state: {skillSelectPanel?.activeSelf}");
     }
 
     public void HideSkillSelection()
@@ -271,58 +314,31 @@ public class UIManager : MonoBehaviour
             skillSelectPanel.SetActive(false);
     }
 
-    /// <summary>
-    /// Clears any existing status‐effect icons and, if a unit is provided,
-    /// instantiates a new icon for each active effect using its configured sprite.
-    /// </summary>
+    // --- Status Icon Display ---
     private void UpdateStatusIcons(UnitController unit)
     {
-        // Validate references
         if (statusIconContainer == null || statusIconTemplatePrefab == null)
         {
-            Debug.LogError("UIManager: Status Icon Container or Template Prefab not assigned!");
+            // Don't log error every frame if unassigned, maybe just once in Start/Awake
+            // Debug.LogError("UIManager: Status Icon Container or Template Prefab not assigned!");
             return;
         }
 
-        // Clear existing icons
-        foreach (Transform child in statusIconContainer)
-        {
-            Destroy(child.gameObject);
-        }
+        foreach (Transform child in statusIconContainer) Destroy(child.gameObject);
+        if (unit == null || unit.ActiveStatusEffects == null || unit.ActiveStatusEffects.Count == 0) return;
 
-        // If no unit selected, nothing more to do
-        if (unit == null) return;
-
-        // If the unit has no active status effects, leave container empty
-        if (unit.ActiveStatusEffects == null || unit.ActiveStatusEffects.Count == 0) return;
-
-        // Populate icons for each active status effect
         foreach (var activeEffect in unit.ActiveStatusEffects)
         {
             if (activeEffect.EffectData == null || activeEffect.EffectData.icon == null)
             {
-                Debug.LogWarning(
-                    $"UIManager: Status effect '{activeEffect.EffectData?.effectName ?? "UNKNOWN"}' on {unit.unitName} is missing data or icon.",
-                    unit);
+                Debug.LogWarning($"UIManager: Status effect '{activeEffect.EffectData?.effectName ?? "UNKNOWN"}' on {unit.unitName} is missing data or icon.", unit);
                 continue;
             }
-
-            // Instantiate icon prefab under the container
             GameObject iconInstance = Instantiate(statusIconTemplatePrefab, statusIconContainer);
-
-            // Assign the sprite on its Image component
             var iconImage = iconInstance.GetComponent<Image>();
-            if (iconImage != null)
-            {
-                iconImage.sprite = activeEffect.EffectData.icon;
-                // Optionally set other properties: iconImage.color = Color.white;
-            }
-            else
-            {
-                Debug.LogError("UIManager: StatusIcon template prefab is missing an Image component!", iconInstance);
-            }
-
+            if (iconImage != null) iconImage.sprite = activeEffect.EffectData.icon;
+            else Debug.LogError("UIManager: StatusIcon template prefab is missing an Image component!", iconInstance);
             iconInstance.SetActive(true);
         }
     }
-}
+} // --- End of UIManager Class ---
