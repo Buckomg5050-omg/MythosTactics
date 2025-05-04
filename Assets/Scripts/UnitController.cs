@@ -22,6 +22,8 @@ public class UnitController : MonoBehaviour
     public int attackRange = 1;
     public int attackPower;
     public int baseDefense;
+    public int speed;
+    public int currentCT = 0;
 
     [Header("Movement")]
     public float moveSpeed = 5.0f;
@@ -100,14 +102,14 @@ public class UnitController : MonoBehaviour
         // MOV
         moveRange = Mathf.Max(1, race.baseMovementPoints + charClass.movementStatModifier);
 
+        // SPD
+        speed = Mathf.Max(1, race.baseSpeed + charClass.speedModifier);
+
         _isDying = false;
         HasActedThisTurn = false;
 
-        Debug.Log(
-            $"Initialized {unitName} ({race.raceName} {charClass.className}) - " +
-            $"HP:{maxHealth}, MP:{maxMp}, ATK:{attackPower}, DEF:{baseDefense}, MOV:{moveRange}",
-            this
-        );
+        Debug.Log($"GM: {unitName} ({unitRace.raceName}/{unitClass.className}) initialized with Stats: " +
+            $"HP:{maxHealth}, MP:{maxMp}, ATK:{attackPower}, DEF:{baseDefense}, SPD:{speed}, MOV:{moveRange}", this);
     }
 
     public void PlaceUnit(Vector3Int startPosition, GridManager gridManager)

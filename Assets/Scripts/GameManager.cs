@@ -391,6 +391,31 @@ public class GameManager : MonoBehaviour
 
     // --- Action Callbacks & Helpers ---
 
+    // --- UI Action Button Handlers ---
+    public void OnMoveButtonPressed()
+    {
+        if (CurrentTurn != Turn.Player || isGameOver || selectedUnit == null || currentState != SelectionState.UnitSelected || selectedUnit.HasActedThisTurn)
+        {
+            Debug.LogWarning("GM: Move button pressed at invalid time/state.");
+            return;
+        }
+        // Emphasize move indicators (already shown on selection)
+        Debug.Log($"GM: Player chose MOVE action for {selectedUnit.unitName}. Waiting for tile click.");
+        ShowActionIndicators(selectedUnit); // Redraw indicators if necessary
+    }
+
+    public void OnAttackButtonPressed()
+    {
+        if (CurrentTurn != Turn.Player || isGameOver || selectedUnit == null || currentState != SelectionState.UnitSelected || selectedUnit.HasActedThisTurn)
+        {
+            Debug.LogWarning("GM: Attack button pressed at invalid time/state.");
+            return;
+        }
+        // Emphasize attack indicators (already shown on selection)
+        Debug.Log($"GM: Player chose ATTACK action for {selectedUnit.unitName}. Waiting for target click.");
+        ShowActionIndicators(selectedUnit); // Redraw indicators if necessary
+    }
+
     private void OnUnitMoveComplete(UnitController unit)
     {
         if (isGameOver || unit == null || !playerUnits.Contains(unit) || !unit.IsAlive)

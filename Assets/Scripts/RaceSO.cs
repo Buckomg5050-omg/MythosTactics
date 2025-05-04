@@ -13,6 +13,9 @@ public class RaceSO : ScriptableObject
     [Tooltip("Base movement range for this race before class or other modifiers.")]
     public int baseMovementPoints = 4;
 
+    [Tooltip("Base speed value for this race before class modifiers.")]
+    public int baseSpeed = 8;
+
     [Tooltip("Modifier added to a unit's base Health (HP) from its class. Can be positive or negative.")]
     public int baseHealthModifier = 0;
 

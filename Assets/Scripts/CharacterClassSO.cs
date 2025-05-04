@@ -28,6 +28,9 @@ public class CharacterClassSO : ScriptableObject
     [Tooltip("Modifier applied to the unit's base Movement Points from their race. Can be positive or negative (e.g., -1 for Knight).")]
     public int movementStatModifier = 0;
 
+    [Tooltip("Modifier applied to the unit's base Speed from their race. Can be positive or negative.")]
+    public int speedModifier = 0;
+
     [Tooltip("Modifier applied to the unit's base maximum Magic Points (MP).")]
     public int mpModifier = 0;
 
