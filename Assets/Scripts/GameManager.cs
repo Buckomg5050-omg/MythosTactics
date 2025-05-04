@@ -57,6 +57,10 @@ public class GameManager : MonoBehaviour
     private const int CT_THRESHOLD = 100;
     private const int DEFAULT_BASE_SPEED = 10;
 
+    // NEW: Turn history tracking
+    private List<UnitController> turnHistory = new List<UnitController>();
+    private const int MaxTurnHistory = 5; // Store a bit more than needed for UI display flexibility
+
     public UnitController selectedUnit { get; private set; }
     public UnitController activeUnit { get; private set; }
     private UnitController _targetForConfirmation = null; // NEW: Store target during confirmation
@@ -149,8 +153,39 @@ public class GameManager : MonoBehaviour
                 activeUnit.currentCT -= CT_THRESHOLD;
                 Debug.Log($"{activeUnit.unitName}'s turn (CT: {activeUnit.currentCT}, Speed: {activeUnit.speed})");
 
-                if (uiManager != null)
-                    uiManager.UpdateTurnIndicatorText($"{activeUnit.unitName}'s Turn");
+                // NEW: Update UI with turn order display
+                if (uiManager != null) // Ensure UIManager exists
+                {
+                    if (activeUnit != null)
+                    {
+                        // Predict the next 2 turns (futureTurns[0] is next, futureTurns[1] is after next)
+                        List<UnitController> futureTurns = PredictFutureTurns(2);
+
+                        // Get units from history (turnHistory[0] is the *just finished* unit)
+                        UnitController unit1TurnAgo = turnHistory.Count >= 2 ? turnHistory[1] : null;
+                        UnitController unit2TurnsAgo = turnHistory.Count >= 3 ? turnHistory[2] : null;
+
+                        // Get Sprites (using CharacterClassSO)
+                        Sprite sprite2Ago = unit2TurnsAgo?.unitClass?.classSprite;
+                        Sprite sprite1Ago = unit1TurnAgo?.unitClass?.classSprite;
+                        Sprite spriteActive = activeUnit.unitClass?.classSprite;
+                        Sprite spriteNext = futureTurns.Count >= 1 ? futureTurns[0]?.unitClass?.classSprite : null;
+                        Sprite spriteAfterNext = futureTurns.Count >= 2 ? futureTurns[1]?.unitClass?.classSprite : null;
+
+                        // Call UIManager to update the display
+                        uiManager.UpdateTurnOrderDisplay(sprite2Ago, sprite1Ago, spriteActive, spriteNext, spriteAfterNext);
+
+                        // Update the text indicator
+                        uiManager.UpdateTurnIndicatorText($"{activeUnit.unitName}'s Turn");
+                    }
+                    else
+                    {
+                        // No unit is active (still charging CT)
+                        uiManager.UpdateTurnIndicatorText("Charging CT...");
+                        // Clear the turn order display
+                        uiManager.UpdateTurnOrderDisplay(null, null, null, null, null);
+                    }
+                }
 
                 activeUnit.TickStatusEffects(); // Tick effects at start of turn
                 if (activeUnit.IsAlive) // Check if still alive after status effects
@@ -171,26 +206,37 @@ public class GameManager : MonoBehaviour
                         Debug.Log($"Starting AI coroutine for {activeUnit.unitName}");
                         yield return StartCoroutine(ProcessAITurnCoroutine(activeUnit));
                     }
+
+                    // NEW: Add to turn history after unit's action completes
+                    if (activeUnit != null) // Check if the turn completed normally
+                    {
+                        // Add the unit that just acted to the front of the history list
+                        turnHistory.Insert(0, activeUnit);
+                        // Trim the history list if it exceeds the maximum size
+                        while (turnHistory.Count > MaxTurnHistory)
+                        {
+                            turnHistory.RemoveAt(turnHistory.Count - 1); // Remove the oldest entry from the end
+                        }
+                    }
                 }
                 else
                 {
-                     Debug.Log($"{activeUnit.unitName} died from status effects at turn start.");
+                    Debug.Log($"{activeUnit.unitName} died from status effects at turn start.");
                 }
 
                 // Cleanup after turn (regardless of player/AI or if died during turn)
-                 if (uiManager != null)
-                 {
-                     uiManager.HideCombatForecast();
-                     uiManager.HideSkillSelection();
-                     uiManager.ClearIndicators();
-                     uiManager.HideEndTurnButton();
-                     uiManager.ShowActionButtons(false);
-                     uiManager.UpdateSelectedUnitInfo(null); // Deselect visually
-                 }
-                 movementRangeVisualizer.ClearRange();
-                 ResetSelectionState(); // Ensure state is clean before next turn potentially starts
-                 activeUnit = null; // Clear active unit reference
-
+                if (uiManager != null)
+                {
+                    uiManager.HideCombatForecast();
+                    uiManager.HideSkillSelection();
+                    uiManager.ClearIndicators();
+                    uiManager.HideEndTurnButton();
+                    uiManager.ShowActionButtons(false);
+                    uiManager.UpdateSelectedUnitInfo(null); // Deselect visually
+                }
+                movementRangeVisualizer.ClearRange();
+                ResetSelectionState(); // Ensure state is clean before next turn potentially starts
+                activeUnit = null; // Clear active unit reference
             }
             else
             {
@@ -200,14 +246,18 @@ public class GameManager : MonoBehaviour
                     unit.currentCT += unit.speed;
                 }
                 if (uiManager != null)
+                {
                     uiManager.UpdateTurnIndicatorText("Charging CT...");
+                    // NEW: Clear turn order display during CT charging
+                    uiManager.UpdateTurnOrderDisplay(null, null, null, null, null);
+                }
                 yield return null; // Wait a frame before checking again
             }
 
             CheckForGameOver(); // Check game over state each loop iteration
         }
         // End of BattleLoopCoroutine
-         Debug.Log("Battle Loop Ended.");
+        Debug.Log("Battle Loop Ended.");
     }
 
     private IEnumerator WaitForPlayerActionCoroutine(UnitController unit)
@@ -226,8 +276,8 @@ public class GameManager : MonoBehaviour
             if (!unit.HasActedThisTurn)
                 ShowActionIndicators(selectedUnit); // Show move/attack range
             uiManager.ShowEndTurnButton();
-             uiManager.HideCombatForecast(); // Ensure forecast is hidden initially
-             uiManager.HideSkillSelection(); // Ensure skill panel is hidden
+            uiManager.HideCombatForecast(); // Ensure forecast is hidden initially
+            uiManager.HideSkillSelection(); // Ensure skill panel is hidden
         }
 
         // Wait until the player confirms an action or ends their turn
@@ -237,22 +287,21 @@ public class GameManager : MonoBehaviour
         }
 
         // Action complete, cleanup UI specifically related to player action selection
-         Debug.Log($"Player action complete flag set for {unit.unitName}. Cleaning up action UI.");
-         if (uiManager != null)
-         {
-             uiManager.HideCombatForecast();
-             uiManager.HideSkillSelection();
-             uiManager.ClearIndicators(); // Clear range/target visuals
-             uiManager.ShowActionButtons(false); // Hide action buttons
-             uiManager.HideEndTurnButton(); // Hide end turn button
-             // Keep selected unit info visible until end of turn potentially
-         }
-         movementRangeVisualizer.ClearRange();
-         currentState = SelectionState.ActionPending; // Or maybe back to None? ActionPending signifies waiting for next turn cycle
-         selectedUnit = null; // Deselect unit logically after action
-         _targetForConfirmation = null; // Clear confirmation target
-         _currentSkill = null; // Clear selected skill
-
+        Debug.Log($"Player action complete flag set for {unit.unitName}. Cleaning up action UI.");
+        if (uiManager != null)
+        {
+            uiManager.HideCombatForecast();
+            uiManager.HideSkillSelection();
+            uiManager.ClearIndicators(); // Clear range/target visuals
+            uiManager.ShowActionButtons(false); // Hide action buttons
+            uiManager.HideEndTurnButton(); // Hide end turn button
+            // Keep selected unit info visible until end of turn potentially
+        }
+        movementRangeVisualizer.ClearRange();
+        currentState = SelectionState.ActionPending; // Or maybe back to None? ActionPending signifies waiting for next turn cycle
+        selectedUnit = null; // Deselect unit logically after action
+        _targetForConfirmation = null; // Clear confirmation target
+        _currentSkill = null; // Clear selected skill
     }
 
     private void HandleSelectionClick(InputAction.CallbackContext context)
@@ -321,7 +370,7 @@ public class GameManager : MonoBehaviour
         isProcessingClick = false; // Allow next click processing
     }
 
-     private void HandleClickInNoneState(UnitController clickedUnit)
+    private void HandleClickInNoneState(UnitController clickedUnit)
     {
         // This state is primarily before the first turn or after game over.
         // If we are here during an active turn (edge case), select the active unit if clicked.
@@ -343,7 +392,6 @@ public class GameManager : MonoBehaviour
             Debug.Log($"Ignoring click in None state. Clicked: {(clickedUnit != null ? clickedUnit.unitName : "Empty")}");
         }
     }
-
 
     // MODIFIED: Logic updated for forecast and confirmation state
     private void HandleClickInUnitSelectedState(Vector3Int clickedCell, UnitController clickedUnit)
@@ -389,7 +437,7 @@ public class GameManager : MonoBehaviour
             Debug.Log($"Player selected attack target: {clickedUnit.unitName}. Calculating forecast.");
             CombatForecastData forecast = CalculateAttackForecast(selectedUnit, clickedUnit);
 
-             if (uiManager != null)
+            if (uiManager != null)
             {
                 uiManager.ShowCombatForecast(forecast);
                 //uiManager.ClearIndicators(); // Hide range/target visuals, forecast is now primary
@@ -410,12 +458,11 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-         // --- Clicked another unit not in attack range or invalid tile ---
+        // --- Clicked another unit not in attack range or invalid tile ---
         Debug.Log($"Invalid click target in UnitSelected state: {(clickedUnit != null ? clickedUnit.unitName : "Empty Cell")} at {clickedCell}.");
         // Optionally provide feedback to the player
-         ResetActionSelection(); // Re-show action indicators, stay in UnitSelected
+        ResetActionSelection(); // Re-show action indicators, stay in UnitSelected
     }
-
 
     // MODIFIED: Logic updated for forecast and confirmation state
     private void HandleClickInSelectingSkillTarget(UnitController target)
@@ -434,14 +481,13 @@ public class GameManager : MonoBehaviour
             Debug.Log($"Player selected skill target: {target.unitName} for skill '{_currentSkill.skillName}'. Calculating forecast.");
 
             // Check MP *before* showing forecast, as forecast includes MP cost
-             if (selectedUnit.currentMp < _currentSkill.mpCost)
-             {
-                 Debug.LogWarning($"{selectedUnit.unitName} cannot afford skill '{_currentSkill.skillName}'. Needs {_currentSkill.mpCost} MP, has {selectedUnit.currentMp}.");
-                 // Optionally show UI feedback (e.g., flashing MP cost red)
-                 // Stay in SelectingSkillTarget state, player needs to choose different target or cancel
-                 return;
-             }
-
+            if (selectedUnit.currentMp < _currentSkill.mpCost)
+            {
+                Debug.LogWarning($"{selectedUnit.unitName} cannot afford skill '{_currentSkill.skillName}'. Needs {_currentSkill.mpCost} MP, has {selectedUnit.currentMp}.");
+                // Optionally show UI feedback (e.g., flashing MP cost red)
+                // Stay in SelectingSkillTarget state, player needs to choose different target or cancel
+                return;
+            }
 
             CombatForecastData forecast = CalculateSkillForecast(selectedUnit, target, _currentSkill);
             Debug.Log($"GameManager: Calculated skill forecast for {selectedUnit.unitName} using '{_currentSkill.skillName}' on {target.unitName}.");
@@ -466,7 +512,6 @@ public class GameManager : MonoBehaviour
             CancelSkillSelection(false); // Cancel back to UnitSelected state, allowing re-selection of action/skill
         }
     }
-
 
     // NEW: Handler for clicks during attack confirmation
     private void HandleClickInConfirmingAttack(UnitController clickedUnit)
@@ -512,8 +557,8 @@ public class GameManager : MonoBehaviour
         if (clickedUnit != null && clickedUnit == _targetForConfirmation && _currentSkill != null)
         {
             // Double-check MP just before execution (in case state changed unexpectedly)
-             if (selectedUnit.currentMp >= _currentSkill.mpCost)
-             {
+            if (selectedUnit.currentMp >= _currentSkill.mpCost)
+            {
                 Debug.Log($"Skill confirmed: {selectedUnit.unitName} using '{_currentSkill.skillName}' on {_targetForConfirmation.unitName}");
 
                 // Execute the skill
@@ -534,24 +579,24 @@ public class GameManager : MonoBehaviour
                     uiManager.ClearIndicators();
                     uiManager.UpdateSelectedUnitInfo(selectedUnit); // Update info (MP cost, potential HP changes)
                 }
-                 movementRangeVisualizer.ClearRange();
+                movementRangeVisualizer.ClearRange();
 
                 // State cleanup
                 _targetForConfirmation = null;
                 _currentSkill = null; // Clear the selected skill
                 currentState = SelectionState.UnitSelected; // Go back to selected state
-             }
-             else
-             {
-                 // Should have been caught earlier, but handle as a safeguard
-                 Debug.LogError($"Insufficient MP for skill '{_currentSkill.skillName}' at confirmation! Needs {_currentSkill.mpCost}, has {selectedUnit.currentMp}. Cancelling.");
-                 CancelActionConfirmation();
-             }
+            }
+            else
+            {
+                // Should have been caught earlier, but handle as a safeguard
+                Debug.LogError($"Insufficient MP for skill '{_currentSkill.skillName}' at confirmation! Needs {_currentSkill.mpCost}, has {selectedUnit.currentMp}. Cancelling.");
+                CancelActionConfirmation();
+            }
         }
         else
         {
             // Clicked somewhere else - treat as cancel
-             Debug.Log($"Skill confirmation cancelled. Clicked {(clickedUnit != null ? clickedUnit.unitName : "Empty/Other")}.");
+            Debug.Log($"Skill confirmation cancelled. Clicked {(clickedUnit != null ? clickedUnit.unitName : "Empty/Other")}.");
             CancelActionConfirmation();
         }
     }
@@ -638,8 +683,92 @@ public class GameManager : MonoBehaviour
 
     // --- End Combat Forecast Calculation Methods ---
 
+    // NEW: Predict future turns based on CT and speed
+    private List<UnitController> PredictFutureTurns(int numberOfTurns)
+    {
+        List<UnitController> predictedTurns = new List<UnitController>();
+        if (numberOfTurns <= 0) return predictedTurns;
 
-    // --- Existing Methods (potentially with minor adjustments) ---
+        // Get all living units EXCEPT the currently active one (if any)
+        List<UnitController> potentialActors = GetAllUnits()
+                                                .Where(u => u != null && u.IsAlive && u != activeUnit)
+                                                .ToList();
+
+        if (potentialActors.Count == 0) return predictedTurns;
+
+        // Store simulated CT values. Start with current real CT.
+Dictionary<UnitController, float> simulatedCT = potentialActors.ToDictionary(u => u, u => (float)u.currentCT);
+        // Predict the required number of turns
+        for (int i = 0; i < numberOfTurns && potentialActors.Count > 0; i++)
+        {
+            UnitController nextUnit = null;
+            float minTicksToThreshold = float.MaxValue;
+
+            // Determine which unit reaches the threshold next based on time = (Threshold - CurrentCT) / Speed
+            foreach (var unit in potentialActors)
+            {
+                // Ensure the unit hasn't already been predicted in this simulation run
+                if (predictedTurns.Contains(unit)) continue;
+
+                float currentSimCT = simulatedCT[unit];
+                // Handle cases where unit might already be >= threshold in simulation state
+                if (currentSimCT >= CT_THRESHOLD)
+                {
+                    // This unit acts immediately in this simulation step
+                    minTicksToThreshold = 0f;
+                    nextUnit = unit;
+                    break; // Found an immediate actor
+                }
+
+                float speed = unit.speed > 0 ? unit.speed : 1; // Prevent division by zero
+                float ticksNeeded = (CT_THRESHOLD - currentSimCT) / speed;
+
+                if (nextUnit == null || ticksNeeded < minTicksToThreshold)
+                {
+                    minTicksToThreshold = ticksNeeded;
+                    nextUnit = unit;
+                }
+                // Tie-breaker: Higher speed acts first if time is equal
+                else if (Mathf.Approximately(ticksNeeded, minTicksToThreshold))
+                {
+                    if (unit.speed > nextUnit.speed)
+                    {
+                        nextUnit = unit;
+                    }
+                }
+            }
+
+            // If a next unit was determined for this prediction step
+            if (nextUnit != null)
+            {
+                predictedTurns.Add(nextUnit);
+
+                // If we predicted based on minimum time > 0, advance other units' simulated CT
+                if (minTicksToThreshold > 0)
+                {
+                    float timeElapsed = minTicksToThreshold;
+                    foreach (var unit in potentialActors)
+                    {
+                        // Don't advance the unit that just "acted" in the simulation yet
+                        if (unit != nextUnit)
+                        {
+                            simulatedCT[unit] += unit.speed * timeElapsed;
+                        }
+                    }
+                }
+                // Now update the CT of the unit that "acted" - subtract threshold
+                simulatedCT[nextUnit] -= CT_THRESHOLD;
+                if (simulatedCT[nextUnit] < 0) simulatedCT[nextUnit] = 0; // Clamp CT floor
+            }
+            else
+            {
+                // No unit could be predicted
+                break;
+            }
+        }
+
+        return predictedTurns;
+    }
 
     private IEnumerator ProcessAITurnCoroutine(UnitController enemyUnit)
     {
@@ -664,7 +793,7 @@ public class GameManager : MonoBehaviour
         if (target == null)
         {
             Debug.Log($"{enemyUnit.unitName} could not find a valid target.");
-             enemyUnit.HasActedThisTurn = true; // End turn
+            enemyUnit.HasActedThisTurn = true; // End turn
             yield break;
         }
 
@@ -730,27 +859,27 @@ public class GameManager : MonoBehaviour
                                 enemyUnit.HasActedThisTurn = true;
                                 yield return new WaitForSeconds(0.75f); // Wait after attack
                             }
-                             else
-                             {
-                                 Debug.Log($"{enemyUnit.unitName} moved but still not in range to attack.");
-                                 enemyUnit.HasActedThisTurn = true; // Mark action as complete even if only moved
-                             }
+                            else
+                            {
+                                Debug.Log($"{enemyUnit.unitName} moved but still not in range to attack.");
+                                enemyUnit.HasActedThisTurn = true; // Mark action as complete even if only moved
+                            }
                         }
                         else
                         {
-                             enemyUnit.HasActedThisTurn = true; // Target died or invalid, action complete
+                            enemyUnit.HasActedThisTurn = true; // Target died or invalid, action complete
                         }
                     }
                     else
                     {
                         Debug.Log($"{enemyUnit.unitName} couldn't find path to move target {moveTargetCell}. Ending turn.");
-                         enemyUnit.HasActedThisTurn = true; // Cannot move, end turn
+                        enemyUnit.HasActedThisTurn = true; // Cannot move, end turn
                     }
                 }
                 else
                 {
-                     Debug.Log($"{enemyUnit.unitName} cannot move closer to target {target.unitName}. Ending turn.");
-                     enemyUnit.HasActedThisTurn = true; // Cannot move, end turn
+                    Debug.Log($"{enemyUnit.unitName} cannot move closer to target {target.unitName}. Ending turn.");
+                    enemyUnit.HasActedThisTurn = true; // Cannot move, end turn
                 }
             }
         }
@@ -774,8 +903,8 @@ public class GameManager : MonoBehaviour
         }
         // Simply ensure the indicators are showing (they should be already if in UnitSelected)
         ShowActionIndicators(selectedUnit);
-         // Hide forecast if it was somehow visible
-         if(uiManager != null) uiManager.HideCombatForecast();
+        // Hide forecast if it was somehow visible
+        if (uiManager != null) uiManager.HideCombatForecast();
     }
 
     public void OnAttackButtonPressed()
@@ -788,7 +917,7 @@ public class GameManager : MonoBehaviour
         // Ensure indicators are showing
         ShowActionIndicators(selectedUnit);
         // Hide forecast if it was somehow visible
-         if(uiManager != null) uiManager.HideCombatForecast();
+        if (uiManager != null) uiManager.HideCombatForecast();
     }
 
     public void OnSkillButtonPressed()
@@ -812,14 +941,14 @@ public class GameManager : MonoBehaviour
         {
             uiManager.ClearIndicators();
             uiManager.ShowActionButtons(false);
-             uiManager.HideCombatForecast(); // Ensure forecast hidden
+            uiManager.HideCombatForecast(); // Ensure forecast hidden
         }
         movementRangeVisualizer.ClearRange();
         _validAttackTargets.Clear(); // Clear attack targets when entering skill selection
         _validMovePositions.Clear(); // Clear move positions
 
         // Check if affordable skills exist first
-        bool canAffordAny = skills.Any(s => s!= null && selectedUnit.currentMp >= s.mpCost); // Added null check for skill SO
+        bool canAffordAny = skills.Any(s => s != null && selectedUnit.currentMp >= s.mpCost); // Added null check for skill SO
         if (!canAffordAny)
         {
             Debug.Log($"{selectedUnit.unitName} cannot afford any skills.");
@@ -828,7 +957,6 @@ public class GameManager : MonoBehaviour
             ResetActionSelection();
             return;
         }
-
 
         // If only one *affordable* skill, directly enter targeting mode for it
         var affordableSkills = skills.Where(s => s != null && selectedUnit.currentMp >= s.mpCost).ToList();
@@ -850,10 +978,9 @@ public class GameManager : MonoBehaviour
         }
     }
 
-
     private void HandleSkillSelectedFromPanel(SkillSO chosenSkill)
     {
-         // Ensure we are in the right state and have valid data
+        // Ensure we are in the right state and have valid data
         if (currentState != SelectionState.SelectingSkillFromPanel || selectedUnit == null || chosenSkill == null)
         {
             Debug.LogWarning($"Invalid skill selection attempt. State: {currentState}, Unit: {selectedUnit?.unitName}, Skill: {chosenSkill?.skillName}");
@@ -861,14 +988,14 @@ public class GameManager : MonoBehaviour
             return;
         }
 
-         // Check MP cost again just in case
-         if (selectedUnit.currentMp < chosenSkill.mpCost)
-         {
-              Debug.LogWarning($"{selectedUnit.unitName} cannot afford selected skill '{chosenSkill.skillName}'. Needs {chosenSkill.mpCost}, has {selectedUnit.currentMp}.");
-              // Keep panel open? Or close and revert? Let's close and revert.
-              CancelSkillSelection(false); // Cancel back to unit selected
-              return;
-         }
+        // Check MP cost again just in case
+        if (selectedUnit.currentMp < chosenSkill.mpCost)
+        {
+            Debug.LogWarning($"{selectedUnit.unitName} cannot afford selected skill '{chosenSkill.skillName}'. Needs {chosenSkill.mpCost}, has {selectedUnit.currentMp}.");
+            // Keep panel open? Or close and revert? Let's close and revert.
+            CancelSkillSelection(false); // Cancel back to unit selected
+            return;
+        }
 
         Debug.Log($"Skill selected from panel: '{chosenSkill.skillName}' for {selectedUnit.unitName}.");
         _currentSkill = chosenSkill;
@@ -913,12 +1040,12 @@ public class GameManager : MonoBehaviour
             uiManager.ShowActionButtons(!selectedUnit.HasActedThisTurn); // Show action buttons IF the unit hasn't acted yet
             if (!selectedUnit.HasActedThisTurn)
             {
-                 ShowActionIndicators(selectedUnit); // Show available attack targets from new position
+                ShowActionIndicators(selectedUnit); // Show available attack targets from new position
             }
             else
             {
-                 uiManager.ClearIndicators(); // If unit already acted, clear indicators
-                 movementRangeVisualizer.ClearRange();
+                uiManager.ClearIndicators(); // If unit already acted, clear indicators
+                movementRangeVisualizer.ClearRange();
             }
             uiManager.ShowEndTurnButton(); // End turn is always available after move (or action)
         }
@@ -942,20 +1069,19 @@ public class GameManager : MonoBehaviour
 
     private void ExecuteSkillEffect(UnitController caster, UnitController target, SkillSO skill)
     {
-         if (isGameOver || caster == null || !caster.IsAlive || target == null || skill == null)
-         {
-              Debug.LogError($"ExecuteSkillEffect failed: Invalid parameters. Caster: {caster?.unitName}, Target: {target?.unitName}, Skill: {skill?.skillName}");
-              return;
-         }
-          // Check target validity based on skill type AFTER ensuring target isn't null
-         bool isTargetValidForSkill = (skill.isHarmful && enemyUnits.Contains(target)) || (!skill.isHarmful && playerUnits.Contains(target));
-         if (!isTargetValidForSkill && target != caster) // Allow self-targeting for non-harmful skills? Assume yes for now.
-         {
-             // This check should ideally happen before calling ExecuteSkillEffect, but added as safeguard.
-             Debug.LogWarning($"ExecuteSkillEffect: Target {target.unitName} is not valid for skill '{skill.skillName}' type (Harmful: {skill.isHarmful}). Aborting effect.");
-             return;
-         }
-
+        if (isGameOver || caster == null || !caster.IsAlive || target == null || skill == null)
+        {
+            Debug.LogError($"ExecuteSkillEffect failed: Invalid parameters. Caster: {caster?.unitName}, Target: {target?.unitName}, Skill: {skill?.skillName}");
+            return;
+        }
+        // Check target validity based on skill type AFTER ensuring target isn't null
+        bool isTargetValidForSkill = (skill.isHarmful && enemyUnits.Contains(target)) || (!skill.isHarmful && playerUnits.Contains(target));
+        if (!isTargetValidForSkill && target != caster) // Allow self-targeting for non-harmful skills? Assume yes for now.
+        {
+            // This check should ideally happen before calling ExecuteSkillEffect, but added as safeguard.
+            Debug.LogWarning($"ExecuteSkillEffect: Target {target.unitName} is not valid for skill '{skill.skillName}' type (Harmful: {skill.isHarmful}). Aborting effect.");
+            return;
+        }
 
         Debug.Log($"Applying effect of '{skill.skillName}' from {caster.unitName} to {target.unitName}...");
 
@@ -970,16 +1096,16 @@ public class GameManager : MonoBehaviour
         else if (!skill.isHarmful) // Handle Buffs/Healing (Example)
         {
             // Placeholder: Add logic for healing or applying buffs based on skill.basePower or other properties
-             if (skill.basePower > 0) // Example: Treat basePower as heal amount
-             {
-                  int healAmount = skill.basePower; // Simple heal for now
-                  Debug.Log($"Non-harmful skill '{skill.skillName}' healing {target.unitName} for {healAmount}.");
-                  target.Heal(healAmount);
-             }
-             else
-             {
-                 Debug.Log($"Non-harmful skill '{skill.skillName}' applied (no direct heal/damage).");
-             }
+            if (skill.basePower > 0) // Example: Treat basePower as heal amount
+            {
+                int healAmount = skill.basePower; // Simple heal for now
+                Debug.Log($"Non-harmful skill '{skill.skillName}' healing {target.unitName} for {healAmount}.");
+                target.Heal(healAmount);
+            }
+            else
+            {
+                Debug.Log($"Non-harmful skill '{skill.skillName}' applied (no direct heal/damage).");
+            }
         }
 
         // Apply Status Effect (if any and target still alive)
@@ -989,10 +1115,10 @@ public class GameManager : MonoBehaviour
             Debug.Log($"Applying status effect '{skill.statusEffectApplied.effectName}' to {target.unitName} for {duration} turns.");
             target.AddStatusEffect(skill.statusEffectApplied, duration);
         }
-         // TODO: Add visual/audio feedback for skill
+        // TODO: Add visual/audio feedback for skill
     }
 
-     // Shows Movement Range and Attack Targets from current position
+    // Shows Movement Range and Attack Targets from current position
     private void ShowActionIndicators(UnitController unit)
     {
         if (unit == null || unit.HasActedThisTurn || uiManager == null || gridManager == null || movementRangeVisualizer == null) return;
@@ -1002,7 +1128,7 @@ public class GameManager : MonoBehaviour
         // Clear previous visuals
         movementRangeVisualizer.ClearRange();
         if (uiManager != null) uiManager.ClearIndicators(); // Clears attack/skill target visuals
-         if (uiManager != null) uiManager.HideCombatForecast(); // Ensure forecast hidden
+        if (uiManager != null) uiManager.HideCombatForecast(); // Ensure forecast hidden
 
         // Show Movement Range
         _validMovePositions = gridManager.CalculateReachableTiles(unit.gridPosition, unit.moveRange, this, unit);
@@ -1019,7 +1145,7 @@ public class GameManager : MonoBehaviour
         Debug.Log($"Found {_validMovePositions.Count} move tiles and {_validAttackTargets.Count} attack targets for {unit.unitName}.");
     }
 
-     // Shows potential targets for a specific skill
+    // Shows potential targets for a specific skill
     private void ShowSkillTargetingRange(UnitController caster, SkillSO skill)
     {
         if (uiManager == null || gridManager == null || caster == null || skill == null)
@@ -1029,9 +1155,9 @@ public class GameManager : MonoBehaviour
         }
 
         // Clear previous visuals
-         uiManager.ClearIndicators(); // Clear attack/skill visuals
-         movementRangeVisualizer.ClearRange(); // Clear move visuals
-         uiManager.HideCombatForecast(); // Ensure forecast hidden
+        uiManager.ClearIndicators(); // Clear attack/skill visuals
+        movementRangeVisualizer.ClearRange(); // Clear move visuals
+        uiManager.HideCombatForecast(); // Ensure forecast hidden
 
         _validSkillTargets.Clear(); // Reset the list of valid targets
 
@@ -1039,34 +1165,32 @@ public class GameManager : MonoBehaviour
 
         foreach (var potentialTarget in potentialTargets)
         {
-             if (potentialTarget == null || !potentialTarget.IsAlive) continue; // Skip dead/null units
+            if (potentialTarget == null || !potentialTarget.IsAlive) continue; // Skip dead/null units
 
-             // Check Manhattan distance for range
-             if (IsUnitInManhattanRange(caster.gridPosition, potentialTarget.gridPosition, skill.range))
-             {
-                 // Check team validity based on skill type
-                 bool isTargetValidTeam = (skill.isHarmful && enemyUnits.Contains(potentialTarget)) ||
+            // Check Manhattan distance for range
+            if (IsUnitInManhattanRange(caster.gridPosition, potentialTarget.gridPosition, skill.range))
+            {
+                // Check team validity based on skill type
+                bool isTargetValidTeam = (skill.isHarmful && enemyUnits.Contains(potentialTarget)) ||
                                          (!skill.isHarmful && playerUnits.Contains(potentialTarget)) ||
                                          (!skill.isHarmful && potentialTarget == caster); // Allow self-target for non-harmful?
 
-                 if (isTargetValidTeam)
-                 {
-                     _validSkillTargets.Add(potentialTarget);
-                 }
-             }
+                if (isTargetValidTeam)
+                {
+                    _validSkillTargets.Add(potentialTarget);
+                }
+            }
         }
 
         Debug.Log($"Skill '{skill.skillName}': Found {_validSkillTargets.Count} valid targets in range {skill.range}.");
         uiManager.VisualizeSkillRange(_validSkillTargets, gridManager); // Update UI
     }
 
-
     // Helper to check Manhattan distance
     private bool IsUnitInManhattanRange(Vector3Int pos1, Vector3Int pos2, int range)
     {
         return Mathf.Abs(pos1.x - pos2.x) + Mathf.Abs(pos1.y - pos2.y) <= range;
     }
-
 
     // Helper to get a combined list of living units
     public List<UnitController> GetAllUnits()
@@ -1075,14 +1199,12 @@ public class GameManager : MonoBehaviour
         return playerUnits.Concat(enemyUnits).Where(u => u != null && u.IsAlive).ToList();
     }
 
-
     public UnitController GetUnitAt(Vector3Int pos)
     {
         // Perf optimization: Check grid manager first if it stores unit locations?
         // Otherwise, iterate through combined list
         return GetAllUnits().FirstOrDefault(u => u.gridPosition == pos);
     }
-
 
     // MODIFIED: Added 'forceReset' parameter
     /// <summary>
@@ -1105,77 +1227,76 @@ public class GameManager : MonoBehaviour
 
         if (forceReset || selectedUnit == null || !selectedUnit.IsAlive)
         {
-             ResetSelectionState(); // Full reset if forced or unit invalid
+            ResetSelectionState(); // Full reset if forced or unit invalid
         }
         else
         {
-             // Revert to UnitSelected state, show base action indicators again
-             currentState = SelectionState.UnitSelected;
-             if (uiManager != null)
-             {
+            // Revert to UnitSelected state, show base action indicators again
+            currentState = SelectionState.UnitSelected;
+            if (uiManager != null)
+            {
                 uiManager.ShowActionButtons(!selectedUnit.HasActedThisTurn);
                 if (!selectedUnit.HasActedThisTurn) ShowActionIndicators(selectedUnit);
                 uiManager.UpdateSelectedUnitInfo(selectedUnit); // Ensure info panel is correct
-             }
+            }
         }
     }
 
-     // NEW: Cancels out of a confirmation state back to UnitSelected
-     private void CancelActionConfirmation()
-     {
-         Debug.Log("Action confirmation cancelled.");
-         _targetForConfirmation = null;
-         // _currentSkill remains if cancelling skill confirm, cleared if attack confirm (was null anyway)
+    // NEW: Cancels out of a confirmation state back to UnitSelected
+    private void CancelActionConfirmation()
+    {
+        Debug.Log("Action confirmation cancelled.");
+        _targetForConfirmation = null;
+        // _currentSkill remains if cancelling skill confirm, cleared if attack confirm (was null anyway)
 
-         if (uiManager != null)
-         {
-             uiManager.HideCombatForecast();
-         }
+        if (uiManager != null)
+        {
+            uiManager.HideCombatForecast();
+        }
 
-         // Decide which state to return to
-         if (_currentSkill != null) // We were confirming a skill
-         {
+        // Decide which state to return to
+        if (_currentSkill != null) // We were confirming a skill
+        {
             currentState = SelectionState.SelectingSkillTarget; // Go back to selecting target for the *same* skill
-             ShowSkillTargetingRange(selectedUnit, _currentSkill); // Re-show skill range
-         }
-         else // We were confirming an attack
-         {
-             currentState = SelectionState.UnitSelected; // Go back to general action selection
-             if (selectedUnit != null && !selectedUnit.HasActedThisTurn)
-             {
-                 ShowActionIndicators(selectedUnit); // Re-show move/attack options
-                 if(uiManager != null) uiManager.ShowActionButtons(true);
-             }
-         }
-         // Ensure unit info panel is up to date
-         if(uiManager != null && selectedUnit != null) uiManager.UpdateSelectedUnitInfo(selectedUnit);
-     }
+            ShowSkillTargetingRange(selectedUnit, _currentSkill); // Re-show skill range
+        }
+        else // We were confirming an attack
+        {
+            currentState = SelectionState.UnitSelected; // Go back to general action selection
+            if (selectedUnit != null && !selectedUnit.HasActedThisTurn)
+            {
+                ShowActionIndicators(selectedUnit); // Re-show move/attack options
+                if (uiManager != null) uiManager.ShowActionButtons(true);
+            }
+        }
+        // Ensure unit info panel is up to date
+        if (uiManager != null && selectedUnit != null) uiManager.UpdateSelectedUnitInfo(selectedUnit);
+    }
 
-
-     // NEW: Resets selection indicators and buttons but stays in UnitSelected state
-     private void ResetActionSelection()
-     {
-         Debug.Log("Resetting action selection visuals.");
-         if (selectedUnit != null && currentState == SelectionState.UnitSelected && !selectedUnit.HasActedThisTurn)
-         {
-             if (uiManager != null)
-             {
-                 uiManager.ClearIndicators();
-                 uiManager.HideCombatForecast();
-                 uiManager.ShowActionButtons(true);
-                 uiManager.UpdateSelectedUnitInfo(selectedUnit);
-             }
-             movementRangeVisualizer.ClearRange();
-             ShowActionIndicators(selectedUnit); // Re-display move/attack ranges
-         }
-         else
-         {
-              // If not in a state where resetting actions makes sense, do a full reset
-              ResetSelectionState();
-         }
-          _targetForConfirmation = null; // Ensure confirmation target cleared
-          // _currentSkill = null; // Should we clear current skill here too? Maybe not if user just misclicked.
-     }
+    // NEW: Resets selection indicators and buttons but stays in UnitSelected state
+    private void ResetActionSelection()
+    {
+        Debug.Log("Resetting action selection visuals.");
+        if (selectedUnit != null && currentState == SelectionState.UnitSelected && !selectedUnit.HasActedThisTurn)
+        {
+            if (uiManager != null)
+            {
+                uiManager.ClearIndicators();
+                uiManager.HideCombatForecast();
+                uiManager.ShowActionButtons(true);
+                uiManager.UpdateSelectedUnitInfo(selectedUnit);
+            }
+            movementRangeVisualizer.ClearRange();
+            ShowActionIndicators(selectedUnit); // Re-display move/attack ranges
+        }
+        else
+        {
+            // If not in a state where resetting actions makes sense, do a full reset
+            ResetSelectionState();
+        }
+        _targetForConfirmation = null; // Ensure confirmation target cleared
+        // _currentSkill = null; // Should we clear current skill here too? Maybe not if user just misclicked.
+    }
 
     // Resets state completely, deselecting unit and clearing UI.
     private void ResetSelectionState()
@@ -1197,14 +1318,13 @@ public class GameManager : MonoBehaviour
             uiManager.HideCombatForecast(); // Hide forecast panel
             uiManager.ShowActionButtons(false); // Hide action buttons
             // Hide end turn button unless it's specifically an active player turn (handled in BattleLoop/WaitForPlayerAction)
-             if (activeUnit == null || !playerUnits.Contains(activeUnit))
-                 uiManager.HideEndTurnButton();
+            if (activeUnit == null || !playerUnits.Contains(activeUnit))
+                uiManager.HideEndTurnButton();
         }
         movementRangeVisualizer.ClearRange(); // Clear move range visuals
 
         currentState = SelectionState.None; // Set state back to neutral
     }
-
 
     private Vector3Int FindBestMoveTowards(UnitController unit, Vector3Int targetPos)
     {
@@ -1237,7 +1357,7 @@ public class GameManager : MonoBehaviour
             // Optional: If distance is equal, prefer tiles that aren't the start tile?
             else if (d == bestDist && bestTile == start)
             {
-                 bestTile = tile;
+                bestTile = tile;
             }
         }
         return bestTile; // Return the best tile found (could be the start tile if no closer tile is reachable)
@@ -1270,31 +1390,33 @@ public class GameManager : MonoBehaviour
         _validAttackTargets.Remove(deadUnit);
         _validSkillTargets.Remove(deadUnit);
 
+        // Remove from turn history
+        turnHistory.Remove(deadUnit);
+
         // If the death occurred during player action, potentially end the action prematurely
         if (removedPlayer && activeUnit == deadUnit) // Check if the active player unit died
         {
-             Debug.Log($"Active player unit {deadUnit.unitName} died. Ending player action.");
-             isPlayerActionComplete = true;
-             ResetSelectionState(); // Reset UI and state
+            Debug.Log($"Active player unit {deadUnit.unitName} died. Ending player action.");
+            isPlayerActionComplete = true;
+            ResetSelectionState(); // Reset UI and state
         }
         else if (currentState == SelectionState.ConfirmingAttack || currentState == SelectionState.ConfirmingSkill)
         {
-             // If confirming action and either attacker or target dies, cancel confirmation
-             if (selectedUnit == null || !selectedUnit.IsAlive || _targetForConfirmation == null || !_targetForConfirmation.IsAlive)
-             {
-                  Debug.Log("Unit involved in confirmation died. Cancelling action.");
-                  CancelActionConfirmation();
-             }
+            // If confirming action and either attacker or target dies, cancel confirmation
+            if (selectedUnit == null || !selectedUnit.IsAlive || _targetForConfirmation == null || !_targetForConfirmation.IsAlive)
+            {
+                Debug.Log("Unit involved in confirmation died. Cancelling action.");
+                CancelActionConfirmation();
+            }
         }
         else if (currentState == SelectionState.SelectingSkillTarget)
         {
             // If selecting skill target and caster dies, cancel fully
-             if (selectedUnit == null || !selectedUnit.IsAlive)
-             {
-                 CancelSkillSelection(true);
-             }
+            if (selectedUnit == null || !selectedUnit.IsAlive)
+            {
+                CancelSkillSelection(true);
+            }
         }
-
 
         CheckForGameOver(); // Check if the death ended the game
     }
@@ -1316,9 +1438,9 @@ public class GameManager : MonoBehaviour
                 uiManager.UpdateTurnIndicatorText("GAME OVER (R to Restart)");
                 uiManager.HideEndTurnButton();
                 uiManager.ShowActionButtons(false);
-                 uiManager.HideCombatForecast();
-                 uiManager.HideSkillSelection();
-                 uiManager.ClearIndicators();
+                uiManager.HideCombatForecast();
+                uiManager.HideSkillSelection();
+                uiManager.ClearIndicators();
             }
             Time.timeScale = 0f; // Pause game
         }
@@ -1329,11 +1451,11 @@ public class GameManager : MonoBehaviour
             if (uiManager != null)
             {
                 uiManager.UpdateTurnIndicatorText("VICTORY! (R to Restart)");
-                 uiManager.HideEndTurnButton();
+                uiManager.HideEndTurnButton();
                 uiManager.ShowActionButtons(false);
-                 uiManager.HideCombatForecast();
-                 uiManager.HideSkillSelection();
-                 uiManager.ClearIndicators();
+                uiManager.HideCombatForecast();
+                uiManager.HideSkillSelection();
+                uiManager.ClearIndicators();
             }
             // Optionally keep time scale at 1f for victory animation? Or pause. Let's pause.
             // Time.timeScale = 0f;
@@ -1341,8 +1463,7 @@ public class GameManager : MonoBehaviour
     }
 
     // --- Unit Spawning Methods ---
-    // (Keep existing SpawnPlayerUnits and SpawnEnemyUnits methods - no changes needed there based on request)
-     private void SpawnPlayerUnits()
+    private void SpawnPlayerUnits()
     {
         playerUnits.Clear();
         HashSet<Vector3Int> occupied = new HashSet<Vector3Int>();
@@ -1367,9 +1488,9 @@ public class GameManager : MonoBehaviour
 
                 if (classToAssign == null || raceToAssign == null)
                 {
-                     Debug.LogError($"Missing default Race or Class SO for Player {i+1}. Cannot initialize stats.");
-                     Destroy(unitGO);
-                     continue;
+                    Debug.LogError($"Missing default Race or Class SO for Player {i+1}. Cannot initialize stats.");
+                    Destroy(unitGO);
+                    continue;
                 }
 
                 unit.InitializeStats(unitName, raceToAssign, classToAssign);
@@ -1413,20 +1534,20 @@ public class GameManager : MonoBehaviour
             {
                 unit.PlaceUnit(pos, gridManager);
                 string unitName = $"Enemy {i + 1}";
-                 CharacterClassSO classToAssign = defaultEnemyClass;
-                 RaceSO raceToAssign = defaultEnemyRace;
+                CharacterClassSO classToAssign = defaultEnemyClass;
+                RaceSO raceToAssign = defaultEnemyRace;
 
-                 if (classToAssign == null || raceToAssign == null)
-                 {
-                     Debug.LogError($"Missing default Race or Class SO for Enemy {i+1}. Cannot initialize stats.");
-                     Destroy(unitGO);
-                     continue;
-                 }
+                if (classToAssign == null || raceToAssign == null)
+                {
+                    Debug.LogError($"Missing default Race or Class SO for Enemy {i+1}. Cannot initialize stats.");
+                    Destroy(unitGO);
+                    continue;
+                }
 
                 unit.InitializeStats(unitName, raceToAssign, classToAssign);
                 int baseSpeed = raceToAssign.baseSpeed;
                 unit.speed = Mathf.Max(1, baseSpeed + classToAssign.speedModifier);
-                 if (unit.speed <= 0)
+                if (unit.speed <= 0)
                 {
                     Debug.LogError($"Unit {unitName} has invalid speed ({unit.speed}). Setting to 1.");
                     unit.speed = 1;
