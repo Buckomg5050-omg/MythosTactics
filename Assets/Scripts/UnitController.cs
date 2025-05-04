@@ -2,6 +2,7 @@ using UnityEngine;
 using System.Collections;
 using System.Collections.Generic;
 using System; // Required for Action
+using TacticalRPG;
 
 [RequireComponent(typeof(SpriteRenderer))]
 public class UnitController : MonoBehaviour
@@ -16,6 +17,7 @@ public class UnitController : MonoBehaviour
     public string unitName = "Unit";
     public int maxHealth;
     public int currentHealth;
+    public int currentHp => currentHealth;
     public int maxMp;
     public int currentMp;
     public int moveRange;
@@ -64,14 +66,14 @@ public class UnitController : MonoBehaviour
     {
         spriteRenderer = GetComponent<SpriteRenderer>();
         if (spriteRenderer == null)
-            Debug.LogError($"UnitController ({gameObject.name}): Missing SpriteRenderer!", this);
+            Debug.LogError($"UnitController ({gameObject.name}): Missing SpriteRenderer!", this); // Keep: Error
     }
 
     public void InitializeStats(string name, RaceSO race, CharacterClassSO charClass)
     {
         if (race == null || charClass == null)
         {
-            Debug.LogError($"UnitController ({name}): RaceSO or CharacterClassSO is null!", this);
+            Debug.LogError($"UnitController ({name}): RaceSO or CharacterClassSO is null!", this); // Keep: Error
             return;
         }
 
@@ -83,7 +85,7 @@ public class UnitController : MonoBehaviour
         if (spriteRenderer != null && unitClass.classSprite != null)
             spriteRenderer.sprite = unitClass.classSprite;
         else
-            Debug.LogWarning($"UnitController ({name}): Class '{unitClass.className}' missing sprite.", this);
+            Debug.LogWarning($"UnitController ({name}): Class '{unitClass.className}' missing sprite.", this); // Keep: Warning
 
         // HP
         const int BASE_HP = 80;
@@ -108,8 +110,7 @@ public class UnitController : MonoBehaviour
         _isDying = false;
         HasActedThisTurn = false;
 
-        Debug.Log($"GM: {unitName} ({unitRace.raceName}/{unitClass.className}) initialized with Stats: " +
-            $"HP:{maxHealth}, MP:{maxMp}, ATK:{attackPower}, DEF:{baseDefense}, SPD:{speed}, MOV:{moveRange}", this);
+        // Removed detailed stat init log for clarity
     }
 
     public void PlaceUnit(Vector3Int startPosition, GridManager gridManager)
@@ -143,7 +144,7 @@ public class UnitController : MonoBehaviour
 
         int damageToApply = Mathf.Max(0, damageAmount);
         currentHealth -= damageToApply;
-        Debug.Log($"Unit '{unitName}' takes {damageToApply} damage. Current Health: {currentHealth}/{maxHealth}", this);
+        Debug.Log($"Unit '{unitName}' takes {damageToApply} damage. Current Health: {currentHealth}/{maxHealth}", this); // Keep: HP change
 
         currentHealth = Mathf.Max(0, currentHealth);
         if (currentHealth <= 0)
@@ -158,13 +159,14 @@ public class UnitController : MonoBehaviour
                 UIManager.Instance?.UpdateSelectedUnitInfo(this);
             }
         }
+        // Only essential HP log kept above. No extra logs needed.
     }
 
     private void Die()
     {
         if (_isDying) return;
         _isDying = true;
-        Debug.Log($"Unit '{unitName}' defeated!", this);
+        Debug.Log($"Unit '{unitName}' defeated!", this); // Keep: Unit defeat
 
         if (_moveCoroutine != null)
         {
@@ -204,13 +206,14 @@ public class UnitController : MonoBehaviour
     {
         if (effectSO == null)
         {
-            Debug.LogWarning($"UnitController ({unitName}): Tried to add a null StatusEffectSO.", this);
+            Debug.LogWarning($"UnitController ({unitName}): Tried to add a null StatusEffectSO.", this); // Keep: Warning
             return;
         }
 
         var newActiveEffect = new ActiveStatusEffect(effectSO, duration);
         ActiveStatusEffects.Add(newActiveEffect);
-        Debug.Log($"{unitName} gained status effect: {effectSO.effectName} for {duration} turns.", this);
+        Debug.Log($"{unitName} gained status effect: {effectSO.effectName} for {duration} turns.", this); // Keep: status applied
+        // Only essential log for status application kept.
     }
 
     /// <summary>
@@ -230,20 +233,31 @@ public class UnitController : MonoBehaviour
                 && effect.EffectData.modifierValue > 0)
             {
                 int dotDamage = effect.EffectData.modifierValue;
-                Debug.Log($"{unitName} takes {dotDamage} damage from '{effect.EffectData.effectName}'.", this);
+                Debug.Log($"{unitName} takes {dotDamage} damage from '{effect.EffectData.effectName}'.", this); // Keep: DoT
                 TakeDamage(dotDamage);
             }
 
             // Decrement remaining duration
             effect.RemainingDuration--;
-            Debug.Log($"{unitName}'s effect '{effect.EffectData.effectName}' duration remaining: {effect.RemainingDuration}", this);
+            // Only keep DoT and expiration logs. Removed per-tick duration log.
 
             // Remove if expired
             if (effect.RemainingDuration <= 0)
             {
-                Debug.Log($"{unitName}'s effect '{effect.EffectData.effectName}' expired.", this);
+                Debug.Log($"{unitName}'s effect '{effect.EffectData.effectName}' expired.", this); // Keep: status expired
                 ActiveStatusEffects.RemoveAt(i);
             }
         }
     }
+    public void Heal(int amount)
+{
+    if (amount <= 0 || !IsAlive) return; // Ignore non-positive healing or healing dead units
+
+    currentHealth += amount;
+    currentHealth = Mathf.Min(currentHealth, maxHealth); // Clamp to max health
+
+    Debug.Log($"{unitName} healed for {amount}. Current HP: {currentHealth}/{maxHealth}");
+    // TODO: Add healing visual effect/number popup?
+    // TODO: Trigger OnHeal event if needed?
+}
 }

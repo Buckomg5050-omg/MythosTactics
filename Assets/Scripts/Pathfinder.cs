@@ -1,6 +1,7 @@
 using UnityEngine;
 using System.Collections.Generic;
 using System.Linq; // Used for OrderBy/ThenBy
+using UnityEngine.Tilemaps;
 
 /// <summary>
 /// Provides static methods for pathfinding using the A* algorithm on a grid managed by GridManager,

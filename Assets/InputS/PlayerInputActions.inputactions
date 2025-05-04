@@ -6,7 +6,7 @@
             "id": "a2955498-9ce4-4e70-a16e-fef1290f1667",
             "actions": [
                 {
-                    "name": "New action",
+                    "name": "Cancel",
                     "type": "Button",
                     "id": "4b004928-2873-4763-a31a-cb477e2fcecd",
                     "expectedControlType": "",
@@ -28,11 +28,22 @@
                 {
                     "name": "",
                     "id": "9907cd99-065e-4439-99ef-27af864c1b41",
-                    "path": "",
+                    "path": "<Mouse>/rightButton",
                     "interactions": "",
                     "processors": "",
                     "groups": "",
-                    "action": "New action",
+                    "action": "Cancel",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "218be6df-ca13-4881-b615-c895802b6548",
+                    "path": "<Keyboard>/escape",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "",
+                    "action": "Cancel",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

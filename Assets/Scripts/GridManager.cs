@@ -39,6 +39,14 @@ public class GridManager : MonoBehaviour
         return null; // Not a ScriptableTile
     }
 
+    /// <summary>
+    /// Returns true if the tile at the given position is walkable, false otherwise.
+    /// </summary>
+    public bool IsWalkable(Vector3Int pos)
+    {
+        TileData tileData = GetTileDataAt(pos);
+        return tileData != null && tileData.isWalkable;
+    }
 
     // --- Movement Range Calculation (MODIFIED) ---
 
